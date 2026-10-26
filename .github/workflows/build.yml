@@ -1,1 +1,57 @@
+name: Build Clearout APK
 
+on:
+  push:
+    paths:
+      - 'Clearout.zip'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: |
+          rm -rf build-src && mkdir build-src
+          unzip -q Clearout.zip -d build-src
+          dir=$(dirname "$(find build-src -name settings.gradle.kts | head -1)")
+          echo "PROJECT_DIR=$dir" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build release APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Name the APK
+        run: |
+          VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' "$PROJECT_DIR/app/build.gradle.kts")
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          cp "$PROJECT_DIR/app/build/outputs/apk/release/app-release.apk" "Clearout-$VERSION.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clearout-apk
+          path: Clearout-*.apk
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}-${{ github.run_number }}
+          name: Clearout ${{ env.VERSION }}
+          body_path: ${{ env.PROJECT_DIR }}/RELEASE_NOTES.md
+          files: Clearout-*.apk
